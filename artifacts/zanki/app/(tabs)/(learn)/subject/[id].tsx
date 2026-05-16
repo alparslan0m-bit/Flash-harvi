@@ -15,9 +15,7 @@ import { LectureCard } from "@/components/LectureCard";
 import { SubjectDownloadButton } from "@/components/SubjectDownloadButton";
 import { useColors } from "@/hooks/useColors";
 import { useHierarchy } from "@/hooks/useHierarchy";
-import { useProgress } from "@/hooks/useProgress";
 import { useSubjectCache } from "@/hooks/useSubjectCache";
-import { useUserCards } from "@/hooks/useUserCards";
 import { useAuth } from "@/context/AuthContext";
 
 export default function SubjectScreen() {
@@ -26,8 +24,6 @@ export default function SubjectScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { data: years } = useHierarchy();
   const { user } = useAuth();
-  const { data: userCards } = useUserCards(user?.id);
-  const completedIds = useProgress();
 
   const subject = years
     ?.flatMap((y) => y.modules)
@@ -41,30 +37,7 @@ export default function SubjectScreen() {
 
   if (!subject) return null;
 
-  const completedCount = subject.lectures.filter(
-    (lec) => completedIds.has(lec.external_id) || completedIds.has(lec.id),
-  ).length;
-
   const totalCount = subject.lectures.length;
-  
-  // Calculate due cards for this subject
-  const dueCount = React.useMemo(() => {
-    if (!subject) return 0;
-    const now = new Date();
-    let count = 0;
-    
-    // Check all lectures in this subject
-    for (const lec of subject.lectures) {
-      const info = lectureInfo.find(li => li.lectureId === lec.id);
-      if (!info || !info.isCached) continue; // Skip if we don't have the cards
-      
-      // We would ideally look at the cards themselves, but since we don't fetch cards here,
-      // we can do an estimate based on userCards, or we can just show a generic "Study Subject" button.
-      // Actually, since we don't have all cards in memory here, we can't accurately count *New* cards.
-      // So let's just render the button generically.
-    }
-    return count;
-  }, [subject, lectureInfo]);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
@@ -147,22 +120,6 @@ export default function SubjectScreen() {
         </View>
       )}
 
-      {/* ── Global Subject Study Button ───────────────────────────────── */}
-      {totalCount > 0 && (
-        <View style={styles.globalStudyContainer}>
-          <TouchableOpacity 
-            style={[styles.globalStudyBtn, { backgroundColor: colors.primary }]}
-            activeOpacity={0.8}
-            onPress={() => router.push({
-              pathname: "/session/subject/[subjectId]",
-              params: { subjectId: subject.id, subjectName: subject.name }
-            })}
-          >
-            <Feather name="play" size={18} color="#FFF" style={{ marginRight: 6 }} />
-            <Text style={styles.globalStudyText}>Study Subject Due Cards</Text>
-          </TouchableOpacity>
-        </View>
-      )}
 
       {/* ── Lecture list ─────────────────────────────────────────────────── */}
       <ScrollView
@@ -177,8 +134,6 @@ export default function SubjectScreen() {
         </Text>
 
         {subject.lectures.map((lec, i) => {
-          const isCompleted =
-            completedIds.has(lec.external_id) || completedIds.has(lec.id);
           const info = lectureInfo.find((li) => li.lectureId === lec.id);
           const isCached = info?.isCached ?? false;
           const hasNewCards = info?.isStale ?? false;
@@ -188,7 +143,7 @@ export default function SubjectScreen() {
               key={lec.id}
               lecture={lec}
               index={i}
-              completed={isCompleted}
+              completed={false} // Simplified for now since we removed global completion tracking here
               isCached={isCached}
               hasNewCards={hasNewCards}
               onPress={() =>
@@ -269,28 +224,6 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
 
-  globalStudyContainer: {
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 4,
-  },
-  globalStudyBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 16,
-    borderRadius: 16,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 4,
-  },
-  globalStudyText: {
-    color: "#FFF",
-    fontSize: 16,
-    fontFamily: "Inter_700Bold",
-  },
 
   list: { paddingTop: 20 },
   sectionLabel: {

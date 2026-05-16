@@ -100,13 +100,6 @@ CREATE TABLE IF NOT EXISTS public.card_sessions (
     created_at TIMESTAMPTZ DEFAULT now()
 );
 
-CREATE TABLE IF NOT EXISTS public.feedback (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
-    content TEXT NOT NULL CHECK (char_length(content) > 0 AND char_length(content) < 10000),
-    status TEXT DEFAULT 'new' CHECK (status IN ('new', 'read', 'resolved', 'archived')),
-    created_at TIMESTAMPTZ DEFAULT now()
-);
 
 -- =============================================
 -- SPACED REPETITION (SM-2)
@@ -264,7 +257,6 @@ ALTER TABLE public.lectures ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.flashcards ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.card_sessions ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.feedback ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.purchases ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.lecture_statistics ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.user_cards ENABLE ROW LEVEL SECURITY;
@@ -277,7 +269,6 @@ CREATE POLICY "admins_all" ON public.lectures FOR ALL TO authenticated USING (is
 CREATE POLICY "admins_all" ON public.flashcards FOR ALL TO authenticated USING (is_admin()) WITH CHECK (is_admin());
 CREATE POLICY "admins_all" ON public.profiles FOR ALL TO authenticated USING (is_admin()) WITH CHECK (is_admin());
 CREATE POLICY "admins_all" ON public.card_sessions FOR ALL TO authenticated USING (is_admin()) WITH CHECK (is_admin());
-CREATE POLICY "admins_all" ON public.feedback FOR ALL TO authenticated USING (is_admin()) WITH CHECK (is_admin());
 CREATE POLICY "admins_all" ON public.purchases FOR ALL TO authenticated USING (is_admin()) WITH CHECK (is_admin());
 CREATE POLICY "admins_all" ON public.lecture_statistics FOR ALL TO authenticated USING (is_admin()) WITH CHECK (is_admin());
 CREATE POLICY "admins_all" ON public.user_cards FOR ALL TO authenticated USING (is_admin()) WITH CHECK (is_admin());
@@ -299,11 +290,11 @@ CREATE POLICY "self_insert" ON public.profiles FOR INSERT TO authenticated WITH 
 CREATE POLICY "self_read" ON public.card_sessions FOR SELECT TO authenticated USING ((SELECT auth.uid()) = user_id);
 CREATE POLICY "self_insert" ON public.card_sessions FOR INSERT TO authenticated WITH CHECK ((SELECT auth.uid()) = user_id);
 CREATE POLICY "self_read" ON public.purchases FOR SELECT TO authenticated USING ((SELECT auth.uid()) = user_id);
-CREATE POLICY "self_read" ON public.feedback FOR SELECT TO authenticated USING ((SELECT auth.uid()) = user_id);
-CREATE POLICY "self_insert" ON public.feedback FOR INSERT TO authenticated WITH CHECK ((SELECT auth.uid()) = user_id);
 CREATE POLICY "self_read" ON public.user_cards FOR SELECT TO authenticated USING ((SELECT auth.uid()) = user_id);
 CREATE POLICY "self_insert" ON public.user_cards FOR INSERT TO authenticated WITH CHECK ((SELECT auth.uid()) = user_id);
 CREATE POLICY "self_update" ON public.user_cards FOR UPDATE TO authenticated USING ((SELECT auth.uid()) = user_id) WITH CHECK ((SELECT auth.uid()) = user_id);
+CREATE POLICY "self_delete" ON public.user_cards FOR DELETE TO authenticated USING ((SELECT auth.uid()) = user_id);
+CREATE POLICY "self_delete" ON public.card_sessions FOR DELETE TO authenticated USING ((SELECT auth.uid()) = user_id);
 
 -- =============================================
 -- INDEXES

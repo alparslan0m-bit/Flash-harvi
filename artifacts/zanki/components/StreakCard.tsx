@@ -31,13 +31,13 @@ export function StreakCard({ streak }: { streak: number }) {
       zapScale.value = withRepeat(
         withSequence(
           withTiming(1.18, { duration: 600, easing: Easing.out(Easing.quad) }),
-          withTiming(1, { duration: 600, easing: Easing.in(Easing.quad) })
+          withTiming(1, { duration: 600, easing: Easing.in(Easing.quad) }),
         ),
         -1,
-        false
+        false,
       );
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [streak]);
 
   const zapStyle = useAnimatedStyle(() => ({
@@ -50,13 +50,15 @@ export function StreakCard({ streak }: { streak: number }) {
   const numColor = isActive ? colors.warning : colors.mutedForeground;
 
   return (
-    <View style={[
-      styles.card,
-      { 
-        backgroundColor: colors.card, 
-        borderColor: isActive ? colors.warning + "4D" : colors.border 
-      },
-    ]}>
+    <View
+      style={[
+        styles.card,
+        {
+          backgroundColor: colors.card,
+          borderColor: isActive ? colors.warning + "4D" : colors.border,
+        },
+      ]}
+    >
       {isActive && (
         <LinearGradient
           colors={[colors.warning + "0A", colors.warning + "1A"]}
@@ -73,7 +75,9 @@ export function StreakCard({ streak }: { streak: number }) {
         </View>
         <View style={styles.numCol}>
           <Text style={[styles.num, { color: numColor }]}>{streak}</Text>
-          <Text style={[styles.label, { color: colors.mutedForeground }]}>day streak</Text>
+          <Text style={[styles.label, { color: colors.mutedForeground }]}>
+            day streak
+          </Text>
         </View>
       </View>
       <Text style={[styles.message, { color: colors.mutedForeground }]}>
@@ -103,7 +107,18 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   numCol: { alignItems: "flex-start" },
-  num: { fontSize: 28, fontFamily: "Inter_700Bold", letterSpacing: -1, lineHeight: 32 },
+  num: {
+    fontSize: 28,
+    fontFamily: "Inter_700Bold",
+    letterSpacing: -1,
+    lineHeight: 32,
+  },
   label: { fontSize: 12, fontFamily: "Inter_400Regular", marginTop: 1 },
-  message: { flex: 1, fontSize: 13, fontFamily: "Inter_400Regular", lineHeight: 18, textAlign: "right" },
+  message: {
+    flex: 1,
+    fontSize: 13,
+    fontFamily: "Inter_400Regular",
+    lineHeight: 18,
+    textAlign: "right",
+  },
 });

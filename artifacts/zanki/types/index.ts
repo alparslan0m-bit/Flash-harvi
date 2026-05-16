@@ -84,26 +84,25 @@ export interface CardSession {
   created_at: string;
 }
 
-// ── User stats ─────────────────────────────────────────────────────────────
-
-export interface SubjectMastery {
-  subject: string;
-  mastery: number;
-}
-
 export interface WeeklyDay {
-  day: string;
+  date: string;
+  label: string;
   count: number;
   isToday: boolean;
 }
 
+// ── User stats ─────────────────────────────────────────────────────────────
+
+export interface SrsLevel {
+  label: string;
+  count: number;
+  color: string;
+  percentage: number;
+}
+
 export interface UserStats {
-  total_sessions: number;
-  total_cards: number;
-  average_mastery: number;
-  best_mastery: number;
   streak: number;
-  weekly_activity: WeeklyDay[];
-  subject_mastery: SubjectMastery[];
-  recent_results: CardSession[];
+  srs_distribution: SrsLevel[];
+  total_xp: number;
+  level: number;
 }

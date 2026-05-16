@@ -8,52 +8,36 @@ const CACHE_KEY = (uid: string) => `zanki:stats:${uid}`;
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-const ZERO_STATS: UserStats = {
+export const ZERO_STATS: UserStats = {
   total_sessions: 0,
   total_cards: 0,
   average_mastery: 0,
-  best_mastery: 0,
   streak: 0,
-  weekly_activity: DAYS.map((day, i) => ({
-    day,
-    count: 0,
-    isToday: i === new Date().getDay(),
-  })),
-  subject_mastery: [],
-  recent_results: [],
+  weekly_activity: [],
+  srs_distribution: [],
+  total_xp: 0,
+  level: 1,
 };
 
 /**
- * Compute stats from raw card_sessions rows.
+ * Compute stats from raw card_sessions and user_cards rows.
  */
-function computeStats(sessions: any[]): UserStats {
-  if (!sessions || sessions.length === 0) return { ...ZERO_STATS };
-
-  // Sort newest first
-  const sorted = [...sessions].sort(
+function computeStats(sessions: any[], userCards: any[]): UserStats {
+  const sortedSessions = [...sessions].sort(
     (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
   );
 
-  const totalSessions = sorted.length;
-  const totalCards = sorted.reduce((s, r) => s + (r.total_cards ?? 0), 0);
-  const avgMastery =
-    totalSessions > 0
-      ? sorted.reduce((s, r) => s + (r.mastery_rate ?? 0), 0) / totalSessions
-      : 0;
-  const bestMastery = Math.max(...sorted.map((r) => r.mastery_rate ?? 0), 0);
 
   // ── Streak ─────────────────────────────────────────────────────────────
   let streak = 0;
   const uniqueDays = new Set(
-    sorted.map((r) => new Date(r.created_at).toDateString()),
+    sortedSessions.map((r) => new Date(r.created_at).toDateString()),
   );
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
   const checkDay = new Date(today);
-  // Check if there's a session today
   if (!uniqueDays.has(checkDay.toDateString())) {
-    // Allow gap of one day (yesterday counts)
     checkDay.setDate(checkDay.getDate() - 1);
   }
   while (uniqueDays.has(checkDay.toDateString())) {
@@ -61,60 +45,63 @@ function computeStats(sessions: any[]): UserStats {
     checkDay.setDate(checkDay.getDate() - 1);
   }
 
-  // ── Weekly activity ────────────────────────────────────────────────────
-  const todayDow = new Date().getDay();
-  const weekCounts = new Array(7).fill(0);
-  const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-  for (const s of sorted) {
-    const d = new Date(s.created_at);
-    if (d.getTime() >= oneWeekAgo) {
-      weekCounts[d.getDay()]++;
-    }
-  }
-  const weeklyActivity: WeeklyDay[] = DAYS.map((day, i) => ({
-    day,
-    count: weekCounts[i],
-    isToday: i === todayDow,
-  }));
 
-  // ── Subject mastery ────────────────────────────────────────────────────
-  const subjectMap: Record<string, { total: number; sum: number }> = {};
-  for (const s of sorted) {
-    const name = s.lecture_name || "Unknown";
-    if (!subjectMap[name]) subjectMap[name] = { total: 0, sum: 0 };
-    subjectMap[name].total++;
-    subjectMap[name].sum += s.mastery_rate ?? 0;
-  }
-  const subjectMastery: SubjectMastery[] = Object.entries(subjectMap)
-    .map(([subject, { total, sum }]) => ({
-      subject,
-      mastery: Math.round(sum / total),
-    }))
-    .sort((a, b) => b.mastery - a.mastery);
+  // ── SRS Distribution ───────────────────────────────────────────────────
+  const srs = {
+    new: 0,
+    learning: 0,
+    review: 0,
+    mastered: 0,
+  };
 
-  // ── Recent results ─────────────────────────────────────────────────────
-  const recentResults: CardSession[] = sorted.slice(0, 20).map((s) => ({
-    id: s.id,
-    user_id: s.user_id,
-    lecture_id: s.lecture_id,
-    lecture_name: s.lecture_name,
-    total_cards: s.total_cards,
-    again_count: s.again_count ?? 0,
-    hard_count: s.hard_count ?? 0,
-    good_count: s.good_count ?? 0,
-    mastery_rate: s.mastery_rate ?? 0,
-    created_at: s.created_at,
-  }));
+  for (const uc of userCards) {
+    if (uc.repetition === 0) srs.new++;
+    else if (uc.interval < 21) srs.learning++;
+    else if (uc.interval < 100) srs.review++;
+    else srs.mastered++;
+  }
+
+  const totalUc = userCards.length || 1;
+  const srs_distribution: SrsLevel[] = [
+    { label: "New", count: srs.new, color: "#94a3b8", percentage: (srs.new / totalUc) * 100 },
+    { label: "Learning", count: srs.learning, color: "#3b82f6", percentage: (srs.learning / totalUc) * 100 },
+    { label: "Review", count: srs.review, color: "#f59e0b", percentage: (srs.review / totalUc) * 100 },
+    { label: "Mastered", count: srs.mastered, color: "#10b981", percentage: (srs.mastered / totalUc) * 100 },
+  ];  // ── Weekly activity (Last 7 Days) ──────────────────────────────────────
+  const weekActivity = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() - (6 - i));
+    d.setHours(0, 0, 0, 0);
+    return d;
+  });
+
+  const dailyCounts: WeeklyDay[] = weekActivity.map((date) => {
+    const count = sortedSessions.filter((s) => {
+      const sd = new Date(s.created_at);
+      sd.setHours(0, 0, 0, 0);
+      return sd.getTime() === date.getTime();
+    }).length;
+    
+    return {
+      date: date.toISOString(),
+      label: DAYS[date.getDay()],
+      count,
+      isToday: date.getTime() === new Date().setHours(0, 0, 0, 0),
+    };
+  });
+
+  const totalXp = sortedSessions.reduce(
+    (s, r) => s + (r.hard_count ?? 0) * 5 + (r.good_count ?? 0) * 10,
+    0
+  );
+  const level = Math.floor(totalXp / 100) + 1;
 
   return {
-    total_sessions: totalSessions,
-    total_cards: totalCards,
-    average_mastery: avgMastery,
-    best_mastery: bestMastery,
     streak,
-    weekly_activity: weeklyActivity,
-    subject_mastery: subjectMastery,
-    recent_results: recentResults,
+    weekly_activity: dailyCounts,
+    srs_distribution,
+    total_xp: totalXp,
+    level: level,
   };
 }
 
@@ -124,7 +111,6 @@ export function useStats(userId: string | undefined) {
     queryFn: async () => {
       if (!userId) return ZERO_STATS;
 
-      // Try local cache
       const cachedRaw = await AsyncStorage.getItem(CACHE_KEY(userId));
       let cached: UserStats | null = null;
       if (cachedRaw) {
@@ -134,22 +120,29 @@ export function useStats(userId: string | undefined) {
       }
 
       try {
-        const { data: sessions, error } = await supabase
-          .from("card_sessions")
-          .select("*")
-          .eq("user_id", userId)
-          .order("created_at", { ascending: false })
-          .limit(500);
+        const [sessionsRes, userCardsRes] = await Promise.all([
+          supabase
+            .from("card_sessions")
+            .select("*")
+            .eq("user_id", userId)
+            .order("created_at", { ascending: false })
+            .limit(500),
+          supabase
+            .from("user_cards")
+            .select("interval, repetition, next_review")
+            .eq("user_id", userId)
+        ]);
 
-        if (error) throw error;
+        if (sessionsRes.error) throw sessionsRes.error;
+        if (userCardsRes.error) throw userCardsRes.error;
 
-        const stats = computeStats(sessions ?? []);
+        const stats = computeStats(sessionsRes.data ?? [], userCardsRes.data ?? []);
 
-        // Persist
         await AsyncStorage.setItem(CACHE_KEY(userId), JSON.stringify(stats));
 
         return stats;
-      } catch {
+      } catch (err) {
+        console.error("useStats error:", err);
         return cached ?? ZERO_STATS;
       }
     },

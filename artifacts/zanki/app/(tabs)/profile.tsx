@@ -11,7 +11,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { ProfileHeroCard, FeedbackForm, AccountActions } from "@/components";
+import { ProfileHeroCard, AccountActions } from "@/components";
 import { useAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
 import { useProfileData } from "@/hooks/useProfileData";
@@ -85,8 +85,6 @@ export default function ProfileScreen() {
             initial={initial}
           />
 
-          {/* --- Feedback Section --- */}
-          <FeedbackForm userId={user?.id} />
 
           <AccountActions userId={user?.id} onSignOut={signOut} />
 

@@ -71,6 +71,7 @@ export function ProfileHeroCard({
           >
             {email}
           </Text>
+
         </View>
 
         {/* Edit button */}

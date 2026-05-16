@@ -14,12 +14,13 @@ export interface CardResultsProps {
   goodCount: number;
   totalCount: number;
   lectureName?: string;
+  xpGained: number;
+  graduatedCount?: number;
   onRetry: () => void;
-  onReview: () => void;
   onHome: () => void;
 }
 
-export function CardResultsView({ masteryRate, againCount, hardCount, goodCount, totalCount, lectureName, onRetry, onReview, onHome }: CardResultsProps) {
+export function CardResultsView({ masteryRate, againCount, hardCount, goodCount, totalCount, lectureName, xpGained, graduatedCount, onRetry, onHome }: CardResultsProps) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { displayScore, ringAnimStyle } = useSessionAnimation(masteryRate);
@@ -46,11 +47,25 @@ export function CardResultsView({ masteryRate, againCount, hardCount, goodCount,
           </View>
         </Animated.View>
 
+        {/* XP Gained Badge */}
+        <Animated.View 
+          entering={FadeInDown.delay(100).duration(400).springify()}
+          style={[st.xpBadge, { backgroundColor: colors.primary + "1A" }]}
+        >
+          <Feather name="zap" size={14} color={colors.primary} />
+          <Text style={[st.xpText, { color: colors.primary }]}>+{xpGained} XP GAINED</Text>
+        </Animated.View>
+
         <Animated.View entering={FadeInDown.delay(200).duration(400).springify()} style={st.titleGroup}>
           <View style={st.titleRow}>
             <Text style={[st.title, { color: colors.foreground }]}>{titleText}</Text>
             <Feather name={feedbackIcon} size={28} color={ringColor} />
           </View>
+          {graduatedCount !== undefined && graduatedCount > 0 && (
+            <Text style={[st.graduationText, { color: colors.mutedForeground }]}>
+              {graduatedCount} cards graduated to review
+            </Text>
+          )}
         </Animated.View>
 
         {/* Stat Pills */}
@@ -74,10 +89,6 @@ export function CardResultsView({ masteryRate, againCount, hardCount, goodCount,
             <Feather name="refresh-cw" size={18} color="#fff" />
             <Text style={[st.btnText, { color: "#fff" }]}>Study Again</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={[st.btn, { backgroundColor: colors.card, borderWidth: 1.5, borderColor: colors.border }]} onPress={onReview} activeOpacity={0.88}>
-            <Feather name="list" size={18} color={colors.foreground} />
-            <Text style={[st.btnText, { color: colors.foreground }]}>Review Cards</Text>
-          </TouchableOpacity>
           <TouchableOpacity style={[st.btn, { backgroundColor: "transparent", marginTop: 4 }]} onPress={onHome} activeOpacity={0.7}>
             <Feather name="home" size={18} color={colors.mutedForeground} />
             <Text style={[st.btnText, { color: colors.mutedForeground }]}>Go Home</Text>
@@ -99,9 +110,23 @@ const st = StyleSheet.create({
   gradeHint: { fontSize: 11, fontFamily: "Inter_400Regular", letterSpacing: 0.2 },
   gradeBadge: { position: "absolute", bottom: 4, right: 4, width: 44, height: 44, borderRadius: 14, alignItems: "center", justifyContent: "center", shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 8, elevation: 6 },
   gradeText: { fontSize: 19, fontFamily: "Inter_800ExtraBold", color: "#fff" },
+  xpBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    marginBottom: 20,
+  },
+  xpText: {
+    fontSize: 13,
+    fontFamily: "Inter_700Bold",
+  },
   titleGroup: { alignItems: "center", marginBottom: 28, width: "100%" },
   titleRow: { flexDirection: "row", alignItems: "center", gap: 12 },
   title: { fontSize: 32, fontFamily: "Nunito_800ExtraBold", letterSpacing: -0.9, textAlign: "center" },
+  graduationText: { fontSize: 14, fontFamily: "Inter_500Medium", marginTop: 4 },
   pills: { flexDirection: "row", gap: 10, width: "100%", marginBottom: 16 },
   pill: { flex: 1, alignItems: "center", paddingVertical: 18, paddingHorizontal: 6, borderRadius: 22, borderWidth: 1, gap: 6 },
   pillNum: { fontSize: 24, fontFamily: "Nunito_800ExtraBold", letterSpacing: -0.8 },

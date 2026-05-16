@@ -239,7 +239,9 @@ export default function LearnScreen() {
           },
         ]}
       >
-        <Text style={[styles.title, { color: colors.foreground }]}>Zanki</Text>
+        <View style={styles.headerTop}>
+          <Text style={[styles.title, { color: colors.foreground }]}>Zanki</Text>
+        </View>
         <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
           Learn smarter, not harder.
         </Text>
@@ -305,6 +307,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  headerTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
   },
   title: {
     fontSize: 38,

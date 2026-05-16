@@ -63,6 +63,19 @@ export function calculateSM2(grade: CardGrade, currentState?: SrsState): SrsStat
 }
 
 /**
+ * Formats a numerical interval (in days) into a human-readable string.
+ */
+export function formatInterval(days: number): string {
+  if (days <= 0) return "<10m";
+  if (days === 1) return "1d";
+  if (days >= 30) {
+    const months = Math.floor(days / 30);
+    return `${months}mo`;
+  }
+  return `${days}d`;
+}
+
+/**
  * Calculates the exact Date object for the next review based on the new interval.
  */
 export function getNextReviewDate(intervalDays: number): Date {

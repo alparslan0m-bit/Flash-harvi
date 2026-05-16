@@ -5,7 +5,7 @@ import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { useColors } from "@/hooks/useColors";
-import { clearStatsCache } from "@/hooks/useStats";
+import { clearStatsCache, ZERO_STATS } from "@/hooks/useStats";
 import { clearProgressCache } from "@/hooks/useProgress";
 import { supabase } from "@/lib/supabase";
 import { clearAllCardCaches } from "@/lib/cardCache";
@@ -50,8 +50,10 @@ export function AccountActions({ userId, onSignOut }: AccountActionsProps) {
 
             // 2. Clear remote (will try but might fail if offline)
             try {
-              await supabase.from("card_sessions").delete().eq("user_id", uid);
-              await supabase.from("user_cards").delete().eq("user_id", uid);
+              const { error: err1 } = await supabase.from("card_sessions").delete().eq("user_id", uid);
+              if (err1) throw err1;
+              const { error: err2 } = await supabase.from("user_cards").delete().eq("user_id", uid);
+              if (err2) throw err2;
             } catch (error) {
               console.warn(
                 "[handleClearHistory] Remote delete failed (possibly offline):",
@@ -59,7 +61,12 @@ export function AccountActions({ userId, onSignOut }: AccountActionsProps) {
               );
             }
 
-            // 3. Force refresh UI
+            // 3. Optimistically clear caches immediately to update UI
+            queryClient.setQueryData(["stats", uid], ZERO_STATS);
+            queryClient.setQueryData(["progress", uid], new Set());
+            queryClient.setQueryData(["user_cards", uid], []);
+
+            // 4. Invalidate to refetch fresh state
             queryClient.invalidateQueries({ queryKey: ["stats", uid] });
             queryClient.invalidateQueries({ queryKey: ["progress", uid] });
             queryClient.invalidateQueries({ queryKey: ["user_cards", uid] });
