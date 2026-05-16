@@ -1,0 +1,254 @@
+# Transform Harvi → Zanki (Flashcard App)
+
+Transform the Harvi MCQ codebase into **Zanki** — a spaced-repetition flashcard app — preserving all design tokens, component hierarchy, navigation, monetization, and offline-first architecture. Only the quiz mechanic (MCQ → flip card), data model, and branding change.
+
+## User Review Required
+
+> [!IMPORTANT]
+> **New Supabase Project**: The skill file says Zanki gets its own Supabase project. Since I can't create Supabase projects, I will:
+> 1. Generate the SQL migration file (`zanki_master_baseline.sql`) ready to run
+> 2. Update `.env` with placeholder values (`<zanki-supabase-url>`, `<zanki-anon-key>`) — you'll fill in the real credentials after creating the project
+> 3. Copy Edge Functions verbatim into a `supabase/functions/` directory
+
+> [!IMPORTANT]
+> **Destination directory**: The skill file mentions renaming `artifacts/mobile` → `artifacts/zanki`. I will **copy** `artifacts/mobile` to `artifacts/zanki` and apply all transformations there, keeping the original Harvi codebase intact. Please confirm this approach.
+
+## Open Questions
+
+> [!NOTE]
+> **No blocking questions** — the ZANKI_SKILL.md is comprehensive. All decisions are specified. I'll proceed exactly as documented once approved.
+
+---
+
+## Proposed Changes
+
+Changes are grouped by the skill file checklist, in execution order.
+
+---
+
+### Phase 1 — Project Scaffolding
+
+#### [NEW] `artifacts/zanki/` (full copy of `artifacts/mobile/`)
+Copy the entire Harvi app as the starting point for Zanki.
+
+#### [MODIFY] [app.json](file:///c:/Users/METRO/Flash%20harvi/artifacts/zanki/app.json)
+- `name` → `"Zanki"`
+- `slug` → `"zanki"`
+- `scheme` → `"zanki"`
+
+#### [MODIFY] [.env](file:///c:/Users/METRO/Flash%20harvi/artifacts/zanki/.env)
+- Replace Supabase URL/key with placeholder env vars for the new Zanki project
+
+#### [NEW] [zanki_master_baseline.sql](file:///c:/Users/METRO/Flash%20harvi/artifacts/zanki/supabase/zanki_master_baseline.sql)
+- Full schema: `years`, `modules`, `subjects`, `lectures`, `flashcards`, `profiles`, `card_sessions`, `feedback`, `purchases`, `lecture_statistics`
+- All RLS policies, triggers, indexes, security functions
+
+---
+
+### Phase 2 — Storage Keys & Branding
+
+#### [MODIFY] [storage.ts](file:///c:/Users/METRO/Flash%20harvi/artifacts/zanki/constants/storage.ts)
+- All `harvi:` → `zanki:` prefix
+- Add `THEME` and `HIERARCHY` keys
+
+#### [MODIFY] [ThemeContext.tsx](file:///c:/Users/METRO/Flash%20harvi/artifacts/zanki/context/ThemeContext.tsx)
+- `harvi:theme` → `zanki:theme`
+
+#### [MODIFY] [edit.tsx](file:///c:/Users/METRO/Flash%20harvi/artifacts/zanki/app/profile/edit.tsx)
+- `harvi:avatar` → use `STORAGE_KEYS.AVATAR`
+- `harvi:displayName` → use `STORAGE_KEYS.DISPLAY_NAME`
+
+#### [MODIFY] [auth.tsx](file:///c:/Users/METRO/Flash%20harvi/artifacts/zanki/app/auth.tsx)
+- App name: `"Harvi"` → `"Zanki"`
+- Tagline: `"Medical Education, Elevated."` → `"Learn smarter, not harder."`
+- Supabase setup note: `mobile://auth/callback` → `zanki://auth/callback`
+
+#### [MODIFY] [index.tsx (learn)](file:///c:/Users/METRO/Flash%20harvi/artifacts/zanki/app/(tabs)/(learn)/index.tsx)
+- Title: `"Harvi"` → `"Zanki"`
+- Subtitle: `"Questions you need"` → `"Learn smarter, not harder."`
+- Loading text: `"Loading Harvi content..."` → `"Loading Zanki content..."`
+
+---
+
+### Phase 3 — Type System
+
+#### [MODIFY] [types/index.ts](file:///c:/Users/METRO/Flash%20harvi/artifacts/zanki/types/index.ts)
+- Remove `Question`, `QuizResult`, `AnsweredState`, `HistoryItem`
+- Add `Flashcard`, `CardRating`, `RatedCard`, `CardSession`
+- Update `UserStats`: `total_quizzes` → `total_sessions`, `total_questions` → `total_cards`, `average_score` → `average_mastery`, `best_score` → `best_mastery`, `recent_results: CardSession[]`
+- Update `Lecture.question_count` → `Lecture.card_count`
+
+---
+
+### Phase 4 — Data Layer
+
+#### [NEW] [lib/cardCache.ts](file:///c:/Users/METRO/Flash%20harvi/artifacts/zanki/lib/cardCache.ts)
+- Copy of `questionCache.ts` with `harvi:qcache:` → `zanki:qcache:`, `questions` → `cards`, `questionCount` → `cardCount`
+
+#### [MODIFY] [lib/offlineQueue.ts](file:///c:/Users/METRO/Flash%20harvi/artifacts/zanki/lib/offlineQueue.ts)
+- `harvi:quiz_queue` → `zanki:card_queue`
+- `PendingQuizResult` → `PendingCardSession`
+- Fields: `score, totalQuestions, correctAnswers` → `totalCards, againCount, hardCount, goodCount, masteryRate`
+
+#### [NEW] [hooks/useCards.ts](file:///c:/Users/METRO/Flash%20harvi/artifacts/zanki/hooks/useCards.ts)
+- Adapted from `useQuiz.ts`: fetches from `flashcards` table
+- Column candidates for `front`, `back`, `image_url`, `hint`
+- No answer encryption/shuffling — flashcards don't need secure fields
+- Exports `fetchCards()` and `useFlashcards()` hook
+- Same offline-first pattern with `cardCache`
+
+#### [MODIFY] [hooks/useSubjectCache.ts](file:///c:/Users/METRO/Flash%20harvi/artifacts/zanki/hooks/useSubjectCache.ts)
+- Import from `cardCache` instead of `questionCache`
+- `fetchQuestions` → `fetchCards`
+- `saveQuestionsToCache` → `saveCardsToCache`
+- `questionCount` → `cardCount` everywhere
+
+#### [MODIFY] [hooks/useProgress.ts](file:///c:/Users/METRO/Flash%20harvi/artifacts/zanki/hooks/useProgress.ts)
+- `harvi:progress:` → `zanki:progress:`
+- `quiz_results` → `card_sessions`
+
+#### [MODIFY] [hooks/useStats.ts](file:///c:/Users/METRO/Flash%20harvi/artifacts/zanki/hooks/useStats.ts)
+- `harvi:stats:` → `zanki:stats:`
+- `quiz_results` → `card_sessions`
+- `score` → `mastery_rate`, `total_questions` → `total_cards`, `correct_answers` → `good_count`
+- `ZERO_STATS`: `total_quizzes` → `total_sessions`, etc.
+- `computeStats` adapted for card session fields
+
+#### [MODIFY] [hooks/useHierarchy.ts](file:///c:/Users/METRO/Flash%20harvi/artifacts/zanki/hooks/useHierarchy.ts)
+- `harvi:hierarchy` → `zanki:hierarchy`
+- `question_count` → `card_count` (with fallback)
+
+#### [MODIFY] [context/SyncContext.tsx](file:///c:/Users/METRO/Flash%20harvi/artifacts/zanki/context/SyncContext.tsx)
+- `quiz_results` → `card_sessions`
+- Field references updated for `PendingCardSession`
+
+---
+
+### Phase 5 — UI Components
+
+#### [NEW] [components/RatingButton.tsx](file:///c:/Users/METRO/Flash%20harvi/artifacts/zanki/components/RatingButton.tsx)
+- Replaces `OptionButton.tsx`
+- Three variants: Again (red, `x` icon), Hard (orange, `minus` icon), Good (green, `check` icon)
+- Scale spring animation on press
+- Same design language (border-radius, font, etc.)
+
+#### [NEW] [components/CardLoadingScreen.tsx](file:///c:/Users/METRO/Flash%20harvi/artifacts/zanki/components/CardLoadingScreen.tsx)
+- Copy of `QuizLoadingScreen.tsx`
+- Title: `"Warming Engines"` → `"Loading Cards"`
+- Tips replaced with spaced-repetition tips
+
+#### [NEW] [components/CardReviewScreen.tsx](file:///c:/Users/METRO/Flash%20harvi/artifacts/zanki/components/CardReviewScreen.tsx)
+- Adapted from `QuizReviewScreen.tsx`
+- Shows front/back text pairs with rating badge (Again/Hard/Good)
+- Summary strip: Again/Hard/Good counts instead of Correct/Wrong/Total
+
+#### [NEW] [components/CardResultsView.tsx](file:///c:/Users/METRO/Flash%20harvi/artifacts/zanki/components/CardResultsView.tsx)
+- Adapted from `QuizResultsView.tsx`
+- `ScoreRing` → **MasteryRing** showing `masteryRate%`
+- StatPills: Again (red) | Hard (orange) | Good (green)
+- Buttons: "Study Again" | "Review Cards" | "Go Home"
+
+#### [NEW] [hooks/useSessionAnimation.ts](file:///c:/Users/METRO/Flash%20harvi/artifacts/zanki/hooks/useSessionAnimation.ts)
+- Rename of `useQuizResultsAnimation.ts` with same animation, "mastery" label
+
+#### [NEW] [utils/sessionHelpers.ts](file:///c:/Users/METRO/Flash%20harvi/artifacts/zanki/utils/sessionHelpers.ts)
+- Adapted from `quizHelpers.ts` — `getGrade`, `getRingColor`, `getTitle` now use mastery-based thresholds
+
+#### [MODIFY] [components/LectureCard.tsx](file:///c:/Users/METRO/Flash%20harvi/artifacts/zanki/components/LectureCard.tsx)
+- `question_count` → `card_count`
+- Label: `"X questions"` → `"X cards"`
+- Prop: `hasNewQuestions` → `hasNewCards`
+
+#### [MODIFY] [components/StatsMetricsGrid.tsx](file:///c:/Users/METRO/Flash%20harvi/artifacts/zanki/components/StatsMetricsGrid.tsx)
+- Labels: "Quizzes" → "Sessions", "Questions" → "Cards", "Avg Score" → "Avg Mastery", "Best Score" → "Best Mastery"
+- Props renamed to match
+
+#### [MODIFY] [components/RecentResultCard.tsx](file:///c:/Users/METRO/Flash%20harvi/artifacts/zanki/components/RecentResultCard.tsx)
+- `QuizResult` → `CardSession`
+- `result.score` → `result.mastery_rate`
+
+#### [MODIFY] [components/index.ts](file:///c:/Users/METRO/Flash%20harvi/artifacts/zanki/components/index.ts)
+- Add new component exports
+
+---
+
+### Phase 6 — Session Screen (The Main Mechanic)
+
+#### [NEW] [app/session/[lectureId].tsx](file:///c:/Users/METRO/Flash%20harvi/artifacts/zanki/app/session/[lectureId].tsx)
+- Adapted from `app/quiz/[lectureId].tsx`
+- **Card flip animation**: 3D Y-axis rotation using `react-native-reanimated` shared value
+- State: `cards`, `currentIndex`, `isFlipped`, `ratings: CardRating[]`, `finished`, `reviewing`
+- Front face: `card.front` + optional `image_url`
+- Back face: `card.back` (revealed on flip)
+- Hint row: "Tap card to reveal answer" (before flip)
+- Rating buttons appear only after flip: Again/Hard/Good
+- `handleRate()`: records rating, advances card, haptic feedback
+- `finishSession()`: computes counts, inserts into `card_sessions`, enqueues offline if needed
+- Same error/empty/loading states adapted for cards
+
+---
+
+### Phase 7 — Navigation & Route Updates
+
+#### [MODIFY] [app/_layout.tsx](file:///c:/Users/METRO/Flash%20harvi/artifacts/zanki/app/_layout.tsx)
+- `quiz/[lectureId]` → `session/[lectureId]`
+
+#### [MODIFY] [app/(tabs)/(learn)/subject/[id].tsx](file:///c:/Users/METRO/Flash%20harvi/artifacts/zanki/app/(tabs)/(learn)/subject/[id].tsx)
+- `pathname: "/quiz/[lectureId]"` → `pathname: "/session/[lectureId]"`
+- `newQuestionCount` → `newCardCount` label text
+
+---
+
+### Phase 8 — Stats Screen Updates
+
+#### [MODIFY] [app/(tabs)/stats.tsx](file:///c:/Users/METRO/Flash%20harvi/artifacts/zanki/app/(tabs)/stats.tsx)
+- Subtitle: `"Your medical learning journey"` → `"Your learning journey"`
+- `displayStats` field names updated for `total_sessions`, `total_cards`, `average_mastery`, `best_mastery`
+- `"quiz"` / `"quizzes"` text → `"session"` / `"sessions"`
+- Empty state: `"Complete your first quiz"` → `"Complete your first flashcard session"`
+- `StatsMetricsGrid` props updated
+
+---
+
+### Phase 9 — Cleanup
+
+- Delete `app/quiz/` directory (replaced by `app/session/`)
+- Delete `components/OptionButton.tsx` (replaced by `RatingButton.tsx`)
+- Delete `components/QuizLoadingScreen.tsx` (replaced by `CardLoadingScreen.tsx`)
+- Delete `components/QuizResultsView.tsx` (replaced by `CardResultsView.tsx`)
+- Delete `components/QuizReviewScreen.tsx` (replaced by `CardReviewScreen.tsx`)
+- Delete `components/QuizImage.tsx` (no longer needed — image is inline on card face)
+- Delete `hooks/useQuiz.ts` (replaced by `hooks/useCards.ts`)
+- Delete `hooks/useQuizResultsAnimation.ts` (replaced by `useSessionAnimation.ts`)
+- Delete `utils/quizHelpers.ts` (replaced by `sessionHelpers.ts`)
+- Delete `lib/questionCache.ts` (replaced by `cardCache.ts`)
+- Delete `lib/crypto.ts` (no answer encryption needed for flashcards)
+- Global search-replace any remaining `"harvi:"` strings → `"zanki:"`
+- Global search-replace any remaining `quiz_results` → `card_sessions`
+- Remove `components/quiz/` directory (ScoreRing/StatPill adapted inline into CardResultsView)
+
+---
+
+## Verification Plan
+
+### Automated Tests
+- `pnpm typecheck` in `artifacts/zanki/` — TypeScript compilation must pass with zero errors
+- `grep -r "harvi:" artifacts/zanki/` — must return zero matches (except any `// migration fallback` comments)
+- `grep -r "quiz_results" artifacts/zanki/` — must return zero matches
+- `grep -r "useQuiz" artifacts/zanki/` — must return zero matches
+- `grep -r "OptionButton" artifacts/zanki/` — must return zero matches
+- `grep -r "QuizLoadingScreen\|QuizReviewScreen\|QuizResultsView" artifacts/zanki/` — must return zero matches
+
+### Manual Verification
+- User creates a new Supabase project, runs `zanki_master_baseline.sql`
+- User fills in `.env` with real Zanki credentials
+- `pnpm install && npx expo start` boots without errors
+- Auth screen shows "Zanki" branding
+- Navigation flow: Years → Modules → Subjects → Lectures → Card session works
+- Card flip animation is smooth (3D Y-axis rotation)
+- Again/Hard/Good buttons appear only after flip
+- Results screen shows mastery ring with correct counts
+- Review screen shows front/back pairs with rating badges
+- Stats screen shows "Sessions", "Cards", "Avg Mastery", "Best Mastery"
+- Offline queue properly stores and syncs `PendingCardSession`
+
