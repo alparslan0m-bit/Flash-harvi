@@ -50,6 +50,18 @@ export interface Flashcard {
   card_order: number;
 }
 
+export interface UserCard {
+  id: string;
+  user_id: string;
+  card_id: string;
+  interval: number;
+  repetition: number;
+  ease_factor: number;
+  next_review: string;
+  created_at: string;
+  updated_at: string;
+}
+
 // ── Session model ──────────────────────────────────────────────────────────
 
 export type CardRating = "again" | "hard" | "good";

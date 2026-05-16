@@ -109,6 +109,23 @@ CREATE TABLE IF NOT EXISTS public.feedback (
 );
 
 -- =============================================
+-- SPACED REPETITION (SM-2)
+-- =============================================
+
+CREATE TABLE IF NOT EXISTS public.user_cards (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    card_id UUID NOT NULL REFERENCES public.flashcards(id) ON DELETE CASCADE,
+    interval INTEGER NOT NULL DEFAULT 0,
+    repetition INTEGER NOT NULL DEFAULT 0,
+    ease_factor NUMERIC(5,2) NOT NULL DEFAULT 2.50,
+    next_review TIMESTAMPTZ NOT NULL DEFAULT now(),
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now(),
+    UNIQUE(user_id, card_id)
+);
+
+-- =============================================
 -- MONETIZATION
 -- =============================================
 
@@ -233,6 +250,8 @@ DROP TRIGGER IF EXISTS tr_update_lectures_updated_at ON lectures;
 CREATE TRIGGER tr_update_lectures_updated_at BEFORE UPDATE ON lectures FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 DROP TRIGGER IF EXISTS tr_update_flashcards_updated_at ON flashcards;
 CREATE TRIGGER tr_update_flashcards_updated_at BEFORE UPDATE ON flashcards FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+DROP TRIGGER IF EXISTS tr_update_user_cards_updated_at ON user_cards;
+CREATE TRIGGER tr_update_user_cards_updated_at BEFORE UPDATE ON user_cards FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- =============================================
 -- RLS
@@ -248,6 +267,7 @@ ALTER TABLE public.card_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.feedback ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.purchases ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.lecture_statistics ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.user_cards ENABLE ROW LEVEL SECURITY;
 
 -- Admin bypass
 CREATE POLICY "admins_all" ON public.years FOR ALL TO authenticated USING (is_admin()) WITH CHECK (is_admin());
@@ -260,6 +280,7 @@ CREATE POLICY "admins_all" ON public.card_sessions FOR ALL TO authenticated USIN
 CREATE POLICY "admins_all" ON public.feedback FOR ALL TO authenticated USING (is_admin()) WITH CHECK (is_admin());
 CREATE POLICY "admins_all" ON public.purchases FOR ALL TO authenticated USING (is_admin()) WITH CHECK (is_admin());
 CREATE POLICY "admins_all" ON public.lecture_statistics FOR ALL TO authenticated USING (is_admin()) WITH CHECK (is_admin());
+CREATE POLICY "admins_all" ON public.user_cards FOR ALL TO authenticated USING (is_admin()) WITH CHECK (is_admin());
 
 -- Public reads
 CREATE POLICY "public_read" ON public.years FOR SELECT USING (true);
@@ -280,6 +301,9 @@ CREATE POLICY "self_insert" ON public.card_sessions FOR INSERT TO authenticated 
 CREATE POLICY "self_read" ON public.purchases FOR SELECT TO authenticated USING ((SELECT auth.uid()) = user_id);
 CREATE POLICY "self_read" ON public.feedback FOR SELECT TO authenticated USING ((SELECT auth.uid()) = user_id);
 CREATE POLICY "self_insert" ON public.feedback FOR INSERT TO authenticated WITH CHECK ((SELECT auth.uid()) = user_id);
+CREATE POLICY "self_read" ON public.user_cards FOR SELECT TO authenticated USING ((SELECT auth.uid()) = user_id);
+CREATE POLICY "self_insert" ON public.user_cards FOR INSERT TO authenticated WITH CHECK ((SELECT auth.uid()) = user_id);
+CREATE POLICY "self_update" ON public.user_cards FOR UPDATE TO authenticated USING ((SELECT auth.uid()) = user_id) WITH CHECK ((SELECT auth.uid()) = user_id);
 
 -- =============================================
 -- INDEXES
@@ -293,5 +317,6 @@ CREATE INDEX IF NOT EXISTS idx_purchases_user_subject_status ON public.purchases
 CREATE INDEX IF NOT EXISTS idx_modules_year_id ON public.modules(year_id);
 CREATE INDEX IF NOT EXISTS idx_subjects_module_id ON public.subjects(module_id);
 CREATE INDEX IF NOT EXISTS idx_lectures_subject_id ON public.lectures(subject_id);
+CREATE INDEX IF NOT EXISTS idx_user_cards_user_review ON public.user_cards(user_id, next_review);
 
 COMMIT;

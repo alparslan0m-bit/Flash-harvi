@@ -158,3 +158,7 @@ export function useStats(userId: string | undefined) {
     networkMode: "offlineFirst",
   });
 }
+
+export async function clearStatsCache(userId: string) {
+  await AsyncStorage.removeItem(CACHE_KEY(userId));
+}

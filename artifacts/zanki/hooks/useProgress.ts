@@ -73,3 +73,7 @@ export function useProgressSet(): Set<string> {
   // NOTE: consumers should pass userId from useAuth().user?.id
   return new Set();
 }
+
+export async function clearProgressCache(userId: string) {
+  await AsyncStorage.removeItem(PROGRESS_CACHE_KEY(userId));
+}

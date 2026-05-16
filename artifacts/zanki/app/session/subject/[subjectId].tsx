@@ -3,30 +3,43 @@ import * as Haptics from "expo-haptics";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useMemo, useState } from "react";
 import { Platform, StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import Animated, { FadeIn, FadeInDown, interpolate, useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated";
+import Animated, { interpolate, useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { CardLoadingScreen } from "@/components/CardLoadingScreen";
 import { CardResultsView } from "@/components/CardResultsView";
 import { CardReviewScreen } from "@/components/CardReviewScreen";
-import { RatingButton } from "@/components/RatingButton";
 import { useAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
-import { useFlashcards } from "@/hooks/useCards";
+import { useSubjectFlashcards } from "@/hooks/useCards";
 import { supabase } from "@/lib/supabase";
 import { enqueueCardSession } from "@/lib/offlineQueue";
 import type { CardRating, Flashcard, RatedCard, UserCard } from "@/types";
 import { useQueryClient } from "@tanstack/react-query";
 import { useUserCards } from "@/hooks/useUserCards";
 import { calculateSM2, getNextReviewDate } from "@/lib/srs";
+import { useHierarchy } from "@/hooks/useHierarchy";
 
-export default function SessionScreen() {
+export default function SubjectSessionScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
-  const { lectureId, lectureName } = useLocalSearchParams<{ lectureId: string; lectureName?: string }>();
-  const { data: allCards, isLoading, error } = useFlashcards(lectureId);
-  const { data: userCards } = useUserCards(user?.id);
+  const { subjectId, subjectName } = useLocalSearchParams<{ subjectId: string; subjectName?: string }>();
+  
+  const { data: years } = useHierarchy();
+  
+  const subject = useMemo(() => {
+    if (!years) return null;
+    return years
+      .flatMap((y) => y.modules)
+      .flatMap((m) => m.subjects)
+      .find((s) => s.id === subjectId);
+  }, [years, subjectId]);
+
+  const lectureIds = useMemo(() => subject?.lectures.map(l => l.id) ?? [], [subject]);
+
+  const { data: allCards, isLoading: loadingCards, error } = useSubjectFlashcards(lectureIds);
+  const { data: userCards, isLoading: loadingUserCards } = useUserCards(user?.id);
   const queryClient = useQueryClient();
   const topPad = insets.top + (Platform.OS === "web" ? 67 : 0);
 
@@ -40,6 +53,7 @@ export default function SessionScreen() {
   const [savedOffline, setSavedOffline] = useState(false);
   const flipProgress = useSharedValue(0);
 
+  // Filter ONLY due cards for global subject review
   const cards = useMemo(() => {
     if (!allCards) return undefined;
     const now = new Date();
@@ -52,6 +66,7 @@ export default function SessionScreen() {
 
   const totalCards = cards?.length ?? 0;
   const currentCard: Flashcard | undefined = cards?.[currentIndex];
+  const isLoading = loadingCards || loadingUserCards || !subject;
 
   // ── Flip animation ──────────────────────────────────────────────────────
   const frontStyle = useAnimatedStyle(() => ({
@@ -83,11 +98,9 @@ export default function SessionScreen() {
     setRatings(newRatings);
 
     if (currentIndex + 1 >= totalCards) {
-      // Session complete
       setFinished(true);
       await finishSession(newRatings);
     } else {
-      // Next card
       setCurrentIndex((i) => i + 1);
       setIsFlipped(false);
       flipProgress.value = 0;
@@ -96,31 +109,42 @@ export default function SessionScreen() {
 
   // ── Finish session ──────────────────────────────────────────────────────
   const finishSession = useCallback(async (allRatings: RatedCard[]) => {
-    if (!user?.id || !lectureId) return;
+    if (!user?.id || !subjectId) return;
     setSubmitting(true);
 
-    const againCount = allRatings.filter((r) => r.rating === "again").length;
-    const hardCount = allRatings.filter((r) => r.rating === "hard").length;
-    const goodCount = allRatings.filter((r) => r.rating === "good").length;
-    const total = allRatings.length;
-    const masteryRate = total > 0 ? Math.round((goodCount / total) * 100) : 0;
+    // Group ratings by lecture to record multiple card_sessions
+    const ratingsByLecture: Record<string, RatedCard[]> = {};
+    for (const r of allRatings) {
+      if (!ratingsByLecture[r.card.lecture_id]) ratingsByLecture[r.card.lecture_id] = [];
+      ratingsByLecture[r.card.lecture_id].push(r);
+    }
 
-    const payload = {
-      user_id: user.id,
-      lecture_id: lectureId,
-      lecture_name: lectureName ?? "",
-      total_cards: total,
-      again_count: againCount,
-      hard_count: hardCount,
-      good_count: goodCount,
-      mastery_rate: masteryRate,
-      created_at: new Date().toISOString(),
-    };
+    // Prepare card_sessions payloads
+    const sessionPayloads = Object.entries(ratingsByLecture).map(([lecId, lecrats]) => {
+      const againCount = lecrats.filter((r) => r.rating === "again").length;
+      const hardCount = lecrats.filter((r) => r.rating === "hard").length;
+      const goodCount = lecrats.filter((r) => r.rating === "good").length;
+      const total = lecrats.length;
+      const masteryRate = total > 0 ? Math.round((goodCount / total) * 100) : 0;
+      
+      const lecInfo = subject?.lectures.find(l => l.id === lecId);
+
+      return {
+        user_id: user.id,
+        lecture_id: lecId,
+        lecture_name: lecInfo?.name ?? subjectName ?? "Subject Review",
+        total_cards: total,
+        again_count: againCount,
+        hard_count: hardCount,
+        good_count: goodCount,
+        mastery_rate: masteryRate,
+        created_at: new Date().toISOString(),
+      };
+    });
 
     // Calculate SRS states for all rated cards
     const updatedUserCards: Partial<UserCard>[] = allRatings.map((r) => {
       const currentState = userCards?.find(uc => uc.card_id === r.card.id);
-      // Map legacy 3-button to SM-2 4-button if needed, but our SM-2 function handles "good" | "hard" | "again" natively.
       const sm2State = calculateSM2(r.rating, currentState ? {
         interval: currentState.interval,
         repetition: currentState.repetition,
@@ -139,9 +163,13 @@ export default function SessionScreen() {
     });
 
     try {
-      const { error: insertErr } = await supabase.from("card_sessions").insert(payload);
-      if (insertErr) throw insertErr;
+      // 1. Insert sessions
+      if (sessionPayloads.length > 0) {
+        const { error: insertErr } = await supabase.from("card_sessions").insert(sessionPayloads);
+        if (insertErr) throw insertErr;
+      }
 
+      // 2. Upsert user cards
       if (updatedUserCards.length > 0) {
         const { error: cardsErr } = await supabase.from("user_cards").upsert(
           updatedUserCards.map(c => ({
@@ -154,28 +182,36 @@ export default function SessionScreen() {
         if (cardsErr) console.error("Failed to sync user_cards", cardsErr);
       }
       
-      // Invalidate caches so UI updates immediately
       queryClient.invalidateQueries({ queryKey: ["stats", user.id] });
       queryClient.invalidateQueries({ queryKey: ["progress", user.id] });
       queryClient.invalidateQueries({ queryKey: ["user_cards", user.id] });
     } catch {
-      await enqueueCardSession({
-        lectureId,
-        lectureName: lectureName ?? "",
-        userId: user.id,
-        totalCards: total,
-        againCount,
-        hardCount,
-        goodCount,
-        masteryRate,
-        createdAt: payload.created_at,
-        userCards: updatedUserCards,
-      });
+      // If network fails, enqueue each session individually so it gets synced offline
+      for (const payload of sessionPayloads) {
+        // Find which userCards belong to this lecture
+        const lecCards = updatedUserCards.filter(uc => {
+          const original = allRatings.find(r => r.card.id === uc.card_id);
+          return original?.card.lecture_id === payload.lecture_id;
+        });
+
+        await enqueueCardSession({
+          lectureId: payload.lecture_id,
+          lectureName: payload.lecture_name,
+          userId: payload.user_id,
+          totalCards: payload.total_cards,
+          againCount: payload.again_count,
+          hardCount: payload.hard_count,
+          goodCount: payload.good_count,
+          masteryRate: payload.mastery_rate,
+          createdAt: payload.created_at,
+          userCards: lecCards,
+        });
+      }
       setSavedOffline(true);
     }
 
     setSubmitting(false);
-  }, [user, lectureId, lectureName]);
+  }, [user, subjectId, subject, subjectName, userCards]);
 
   // ── Computed results ────────────────────────────────────────────────────
   const results = useMemo(() => {
@@ -202,7 +238,7 @@ export default function SessionScreen() {
   }, []);
 
   // ── Loading ─────────────────────────────────────────────────────────────
-  if (isLoading) return <CardLoadingScreen lectureName={lectureName} />;
+  if (isLoading) return <CardLoadingScreen lectureName={subjectName} />;
 
   // ── Error ───────────────────────────────────────────────────────────────
   if (error) {
@@ -224,7 +260,7 @@ export default function SessionScreen() {
       <View style={[st.center, { backgroundColor: colors.background }]}>
         <Feather name="check-circle" size={48} color={colors.success} />
         <Text style={[st.errTitle, { color: colors.foreground }]}>You're all caught up!</Text>
-        <Text style={[st.errMsg, { color: colors.mutedForeground }]}>There are no due cards in this lecture right now. Great job!</Text>
+        <Text style={[st.errMsg, { color: colors.mutedForeground }]}>There are no due cards in this subject right now. Great job!</Text>
         <TouchableOpacity style={[st.retryBtn, { backgroundColor: colors.primary }]} onPress={handleHome}>
           <Text style={st.retryText}>Go Back</Text>
         </TouchableOpacity>
@@ -246,110 +282,106 @@ export default function SessionScreen() {
         hardCount={results.hardCount}
         goodCount={results.goodCount}
         totalCount={results.total}
-        lectureName={lectureName}
-        onRetry={handleRetry}
+        submitting={submitting}
+        savedOffline={savedOffline}
         onReview={() => setReviewing(true)}
+        onRetry={handleRetry}
         onHome={handleHome}
       />
     );
   }
 
-  // ── Active session ──────────────────────────────────────────────────────
+  // ── Active card ─────────────────────────────────────────────────────────
+  if (!currentCard) return null;
+
   return (
-    <View style={[st.root, { backgroundColor: colors.background }]}>
-      {/* Header */}
-      <View style={[st.header, { paddingTop: topPad + 10 }]}>
-        <TouchableOpacity onPress={handleHome} style={[st.backBtn, { backgroundColor: colors.muted }]} activeOpacity={0.75}>
-          <Feather name="x" size={18} color={colors.foreground} />
+    <View style={[st.root, { paddingTop: topPad, backgroundColor: colors.background }]}>
+      {/* Progress */}
+      <View style={st.progressContainer}>
+        <TouchableOpacity style={[st.closeBtn, { backgroundColor: colors.card }]} onPress={handleHome}>
+          <Feather name="x" size={20} color={colors.foreground} />
         </TouchableOpacity>
-        <View style={st.headerCenter}>
-          <Text style={[st.progressText, { color: colors.foreground }]}>{currentIndex + 1} / {totalCards}</Text>
-          {lectureName && <Text style={[st.lecName, { color: colors.mutedForeground }]} numberOfLines={1}>{lectureName}</Text>}
+        <View style={st.progressTrack}>
+          <View
+            style={[
+              st.progressFill,
+              { backgroundColor: colors.primary, width: `${(currentIndex / totalCards) * 100}%` },
+            ]}
+          />
         </View>
-        <View style={{ width: 38 }} />
+        <Text style={[st.progressText, { color: colors.mutedForeground }]}>
+          {currentIndex + 1} / {totalCards}
+        </Text>
       </View>
 
-      {/* Progress bar */}
-      <View style={[st.progressBar, { backgroundColor: colors.muted }]}>
-        <View style={[st.progressFill, { backgroundColor: colors.primary, width: `${((currentIndex + 1) / totalCards) * 100}%` }]} />
-      </View>
-
-      {/* Card */}
+      {/* Card area */}
       <View style={st.cardArea}>
-        <TouchableOpacity onPress={handleFlip} activeOpacity={0.95} style={st.flipTouch} disabled={isFlipped}>
-          {/* Front face */}
-          <Animated.View style={[st.face, { backgroundColor: colors.card, borderColor: colors.border }, frontStyle]}>
-            <View style={[st.faceBadge, { backgroundColor: colors.primary + "14" }]}>
-              <Text style={[st.faceBadgeText, { color: colors.primary }]}>FRONT</Text>
-            </View>
-            <Text style={[st.faceText, { color: colors.foreground }]}>{currentCard?.front}</Text>
-            {currentCard?.hint && (
-              <Text style={[st.hintText, { color: colors.mutedForeground }]}>{currentCard.hint}</Text>
-            )}
-            {!isFlipped && (
-              <Animated.View entering={FadeIn.delay(300)} style={[st.tapHint, { backgroundColor: colors.muted }]}>
-                <Feather name="rotate-cw" size={13} color={colors.mutedForeground} />
-                <Text style={[st.tapHintText, { color: colors.mutedForeground }]}>Tap to reveal answer</Text>
-              </Animated.View>
-            )}
+        <View style={st.cardWrapper}>
+          <Animated.View
+            style={[st.cardFace, st.cardFront, { backgroundColor: colors.card, borderColor: colors.border }, frontStyle]}
+          >
+            <Text style={[st.cardText, { color: colors.foreground }]}>{currentCard.front}</Text>
           </Animated.View>
 
-          {/* Back face */}
-          <Animated.View style={[st.face, st.faceBack, { backgroundColor: colors.card, borderColor: colors.primary + "4D" }, backStyle]}>
-            <View style={[st.faceBadge, { backgroundColor: colors.success + "14" }]}>
-              <Text style={[st.faceBadgeText, { color: colors.success }]}>BACK</Text>
-            </View>
-            <Text style={[st.faceText, { color: colors.foreground }]}>{currentCard?.back}</Text>
+          <Animated.View
+            style={[st.cardFace, st.cardBack, { backgroundColor: colors.card, borderColor: colors.border }, backStyle]}
+            pointerEvents={isFlipped ? "auto" : "none"}
+          >
+            <Text style={[st.cardText, { color: colors.foreground }]}>{currentCard.back}</Text>
           </Animated.View>
-        </TouchableOpacity>
+        </View>
       </View>
 
-      {/* Rating buttons — only visible after flip */}
-      {isFlipped && (
-        <Animated.View entering={FadeInDown.duration(350).springify()} style={st.ratingRow}>
-          <RatingButton rating="again" onPress={() => handleRate("again")} />
-          <RatingButton rating="hard" onPress={() => handleRate("hard")} />
-          <RatingButton rating="good" onPress={() => handleRate("good")} />
-        </Animated.View>
-      )}
-
-      {!isFlipped && <View style={st.ratingPlaceholder} />}
+      {/* Controls */}
+      <View style={[st.controls, { paddingBottom: insets.bottom + 20 }]}>
+        {!isFlipped ? (
+          <TouchableOpacity style={[st.revealBtn, { backgroundColor: colors.primary }]} onPress={handleFlip}>
+            <Text style={st.revealText}>Show Answer</Text>
+          </TouchableOpacity>
+        ) : (
+          <View style={st.ratingRow}>
+            <RatingButton type="again" onPress={() => handleRate("again")} />
+            <RatingButton type="hard" onPress={() => handleRate("hard")} />
+            <RatingButton type="good" onPress={() => handleRate("good")} />
+          </View>
+        )}
+      </View>
     </View>
   );
 }
 
 const st = StyleSheet.create({
   root: { flex: 1 },
-  center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 14, paddingHorizontal: 32 },
-  errTitle: { fontSize: 20, fontFamily: "Inter_700Bold", textAlign: "center" },
-  errMsg: { fontSize: 14, fontFamily: "Inter_400Regular", textAlign: "center", lineHeight: 20 },
-  retryBtn: { paddingHorizontal: 24, paddingVertical: 14, borderRadius: 14, marginTop: 8 },
-  retryText: { color: "#fff", fontSize: 15, fontFamily: "Inter_600SemiBold" },
-
-  header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingBottom: 8, gap: 12 },
-  backBtn: { width: 38, height: 38, borderRadius: 12, alignItems: "center", justifyContent: "center" },
-  headerCenter: { flex: 1, alignItems: "center" },
-  progressText: { fontSize: 18, fontFamily: "Nunito_800ExtraBold", letterSpacing: -0.5 },
-  lecName: { fontSize: 12, fontFamily: "Inter_400Regular", marginTop: 1, maxWidth: 200 },
-
-  progressBar: { height: 4, marginHorizontal: 20, borderRadius: 2, overflow: "hidden" },
-  progressFill: { height: "100%", borderRadius: 2 },
-
-  cardArea: { flex: 1, justifyContent: "center", paddingHorizontal: 20, paddingVertical: 16 },
-  flipTouch: { flex: 1, maxHeight: 420 },
-
-  face: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, borderRadius: 26, borderWidth: 1.5, padding: 28, justifyContent: "center", alignItems: "center", gap: 16, shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.06, shadowRadius: 12, elevation: 3 },
-  faceBack: { position: "absolute" },
-
-  faceBadge: { paddingHorizontal: 12, paddingVertical: 4, borderRadius: 8, position: "absolute", top: 20, left: 20 },
-  faceBadgeText: { fontSize: 10, fontFamily: "Inter_800ExtraBold", letterSpacing: 0.8 },
-
-  faceText: { fontSize: 20, fontFamily: "Nunito_800ExtraBold", textAlign: "center", lineHeight: 28, letterSpacing: -0.4 },
-  hintText: { fontSize: 14, fontFamily: "Inter_400Regular", textAlign: "center", fontStyle: "italic", lineHeight: 20 },
-
-  tapHint: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, position: "absolute", bottom: 24 },
-  tapHintText: { fontSize: 12, fontFamily: "Inter_500Medium" },
-
-  ratingRow: { flexDirection: "row", gap: 10, paddingHorizontal: 20, paddingBottom: 24 },
-  ratingPlaceholder: { height: 110, paddingBottom: 24 },
+  center: { flex: 1, alignItems: "center", justifyContent: "center", padding: 24, gap: 12 },
+  errTitle: { fontSize: 22, fontFamily: "Inter_700Bold", textAlign: "center" },
+  errMsg: { fontSize: 15, fontFamily: "Inter_400Regular", textAlign: "center", lineHeight: 22 },
+  retryBtn: { marginTop: 24, paddingVertical: 14, paddingHorizontal: 32, borderRadius: 16 },
+  retryText: { color: "#FFF", fontSize: 16, fontFamily: "Inter_600SemiBold" },
+  progressContainer: { flexDirection: "row", alignItems: "center", paddingHorizontal: 20, marginBottom: 20, gap: 16 },
+  closeBtn: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
+  progressTrack: { flex: 1, height: 8, backgroundColor: "rgba(150,150,150,0.15)", borderRadius: 4, overflow: "hidden" },
+  progressFill: { height: "100%", borderRadius: 4 },
+  progressText: { fontSize: 14, fontFamily: "Inter_600SemiBold", width: 44, textAlign: "right" },
+  cardArea: { flex: 1, paddingHorizontal: 20 },
+  cardWrapper: { flex: 1, position: "relative" },
+  cardFace: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 32,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 32,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
+    elevation: 3,
+  },
+  cardFront: {},
+  cardBack: {},
+  cardText: { fontSize: 26, fontFamily: "Inter_600SemiBold", textAlign: "center", lineHeight: 36 },
+  controls: { paddingHorizontal: 20, paddingTop: 24 },
+  revealBtn: { paddingVertical: 18, borderRadius: 20, alignItems: "center" },
+  revealText: { color: "#FFF", fontSize: 18, fontFamily: "Inter_700Bold" },
+  ratingRow: { flexDirection: "row", justifyContent: "center", gap: 16 },
 });

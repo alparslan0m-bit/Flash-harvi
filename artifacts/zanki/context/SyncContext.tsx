@@ -69,6 +69,25 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
           });
 
           if (!error) {
+            // Also upsert user_cards if present
+            if (session.userCards && session.userCards.length > 0) {
+              const { error: cardsError } = await supabase.from("user_cards").upsert(
+                session.userCards.map(c => ({
+                  user_id: session.userId,
+                  card_id: c.card_id,
+                  interval: c.interval,
+                  repetition: c.repetition,
+                  ease_factor: c.ease_factor,
+                  next_review: c.next_review,
+                  updated_at: new Date().toISOString()
+                })),
+                { onConflict: 'user_id,card_id' }
+              );
+              if (cardsError) {
+                console.error("Failed to sync user_cards", cardsError);
+              }
+            }
+
             await removePendingCardSession(session.createdAt);
             setIsOnline(true);
             if (user?.id) {

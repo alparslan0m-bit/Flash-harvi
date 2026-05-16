@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import type { UserCard } from "@/types";
 
 export interface PendingCardSession {
   lectureId: string;
@@ -10,6 +11,7 @@ export interface PendingCardSession {
   goodCount: number;
   masteryRate: number;
   createdAt: string;
+  userCards?: Partial<UserCard>[];
 }
 
 const QUEUE_KEY = "zanki:card_queue";

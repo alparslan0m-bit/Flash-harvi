@@ -62,3 +62,50 @@ export function useFlashcards(lectureId: string | undefined) {
 }
 
 export { fetchCards };
+
+/**
+ * Fetch all flashcards for a collection of lectures (e.g., an entire subject).
+ */
+export function useSubjectFlashcards(lectureIds: string[] | undefined) {
+  return useQuery<Flashcard[]>({
+    queryKey: ["subject_flashcards", lectureIds],
+    queryFn: async () => {
+      if (!lectureIds || lectureIds.length === 0) return [];
+      
+      const allCards: Flashcard[] = [];
+      let fetchError: Error | null = null;
+      
+      // We will try to fetch all in parallel, falling back to cache per lecture
+      const fetchPromises = lectureIds.map(async (lectureId) => {
+        const cached = await getCardsFromCache(lectureId);
+        try {
+          const fresh = await fetchCards(lectureId);
+          if (fresh.length > 0) {
+            await saveCardsToCache(lectureId, fresh);
+          }
+          return fresh;
+        } catch (err) {
+          if (cached && cached.length > 0) return cached;
+          fetchError = err instanceof Error ? err : new Error(String(err));
+          return [];
+        }
+      });
+      
+      const results = await Promise.all(fetchPromises);
+      
+      // Flatten arrays
+      for (const res of results) {
+        allCards.push(...res);
+      }
+      
+      if (allCards.length === 0 && fetchError) {
+        throw fetchError;
+      }
+      
+      return allCards;
+    },
+    enabled: !!lectureIds && lectureIds.length > 0,
+    staleTime: 5 * 60 * 1000,
+    networkMode: "offlineFirst",
+  });
+}

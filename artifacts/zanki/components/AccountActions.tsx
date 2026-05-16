@@ -51,6 +51,7 @@ export function AccountActions({ userId, onSignOut }: AccountActionsProps) {
             // 2. Clear remote (will try but might fail if offline)
             try {
               await supabase.from("card_sessions").delete().eq("user_id", uid);
+              await supabase.from("user_cards").delete().eq("user_id", uid);
             } catch (error) {
               console.warn(
                 "[handleClearHistory] Remote delete failed (possibly offline):",
@@ -61,6 +62,7 @@ export function AccountActions({ userId, onSignOut }: AccountActionsProps) {
             // 3. Force refresh UI
             queryClient.invalidateQueries({ queryKey: ["stats", uid] });
             queryClient.invalidateQueries({ queryKey: ["progress", uid] });
+            queryClient.invalidateQueries({ queryKey: ["user_cards", uid] });
 
             Alert.alert("History Cleared", "Your flashcard history has been reset.");
           },
